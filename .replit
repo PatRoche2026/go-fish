@@ -1,2 +1,5 @@
-run = "python go_fish.py"
-entrypoint = "go_fish.py"
+run = "python main.py"
+entrypoint = "main.py"
+
+[deployment]
+run = ["python", "main.py"]

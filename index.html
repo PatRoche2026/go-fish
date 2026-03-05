@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go Fish!</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a4a2f;
+      --felt: #0d6b3f;
+      --card: #fff;
+      --card-back: #2c5aa0;
+      --red: #d32f2f;
+      --black: #222;
+      --gold: #ffd700;
+      --text: #e0e0e0;
+    }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+    h1 {
+      font-size: 2em;
+      margin: 16px 0 4px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    h1 span { color: var(--gold); }
+
+    /* Layout */
+    .game-area {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 16px 16px;
+      flex: 1;
+    }
+
+    /* Zones */
+    .zone {
+      background: rgba(0,0,0,0.2);
+      border-radius: 12px;
+      padding: 12px;
+      position: relative;
+    }
+    .zone-label {
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 8px;
+    }
+
+    /* Cards */
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 90px;
+      justify-content: center;
+    }
+    .card {
+      width: 60px;
+      height: 84px;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      cursor: default;
+      transition: transform 0.15s, box-shadow 0.15s;
+      position: relative;
+      user-select: none;
+    }
+    .card-front {
+      background: var(--card);
+      border: 2px solid #ddd;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .card-front.red { color: var(--red); }
+    .card-front.black { color: var(--black); }
+    .card-back {
+      background: var(--card-back);
+      border: 2px solid #1a3d6e;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .card-back::after {
+      content: '🐟';
+      font-size: 1.4em;
+    }
+    .card .rank { font-size: 1.3em; line-height: 1; }
+    .card .suit { font-size: 1.1em; line-height: 1; }
+
+    /* Selectable cards in player hand */
+    .player-cards .card-front {
+      cursor: pointer;
+    }
+    .player-cards .card-front:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+    }
+    .player-cards .card-front.selected {
+      transform: translateY(-12px);
+      box-shadow: 0 0 0 3px var(--gold), 0 8px 16px rgba(0,0,0,0.4);
+    }
+
+    /* Books */
+    .books {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 32px;
+    }
+    .book {
+      background: rgba(255,215,0,0.2);
+      border: 1px solid rgba(255,215,0,0.4);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: var(--gold);
+    }
+
+    /* Deck */
+    .deck-zone {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 16px;
+    }
+    .deck-stack {
+      position: relative;
+      width: 60px;
+      height: 84px;
+    }
+    .deck-stack .card-back {
+      position: absolute;
+      top: 0; left: 0;
+    }
+    .deck-stack .card-back:nth-child(2) { top: 2px; left: 1px; }
+    .deck-stack .card-back:nth-child(3) { top: 4px; left: 2px; }
+    .deck-count {
+      font-size: 1.1em;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Message / Log */
+    .message-area {
+      text-align: center;
+      padding: 12px;
+      font-size: 1.1em;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .message-area .msg {
+      background: rgba(0,0,0,0.3);
+      padding: 8px 20px;
+      border-radius: 20px;
+      max-width: 600px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 10px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-ask {
+      background: var(--gold);
+      color: #222;
+    }
+    .btn-ask:hover { background: #ffed4a; }
+    .btn-ask:disabled {
+      background: #555;
+      color: #999;
+      cursor: not-allowed;
+    }
+    .btn-new {
+      background: #2ecc71;
+      color: #fff;
+      margin-top: 8px;
+    }
+    .btn-new:hover { background: #27ae60; }
+
+    /* Action area */
+    .action-area {
+      text-align: center;
+      padding: 8px;
+    }
+    .rank-select {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+    .rank-btn {
+      width: 42px;
+      height: 36px;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0.95em;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .rank-btn:hover { background: rgba(255,255,255,0.2); }
+    .rank-btn.active {
+      border-color: var(--gold);
+      background: rgba(255,215,0,0.2);
+      color: var(--gold);
+    }
+    .rank-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* Score */
+    .scoreboard {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      padding: 4px 0;
+      font-size: 0.9em;
+    }
+    .score { font-weight: 700; color: var(--gold); }
+
+    /* Game over overlay */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay.show { display: flex; }
+    .overlay-box {
+      background: #1a3a2a;
+      border: 2px solid var(--gold);
+      border-radius: 16px;
+      padding: 32px 48px;
+      text-align: center;
+    }
+    .overlay-box h2 { font-size: 2em; margin-bottom: 8px; }
+    .overlay-box .result { font-size: 1.3em; margin: 12px 0; }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .msg { animation: fadeIn 0.3s ease-out; }
+
+    @keyframes dealIn {
+      from { opacity: 0; transform: scale(0.5) rotate(10deg); }
+      to { opacity: 1; transform: scale(1) rotate(0); }
+    }
+    .card { animation: dealIn 0.3s ease-out backwards; }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.4em; }
+      .card { width: 48px; height: 68px; }
+      .card .rank { font-size: 1em; }
+      .card .suit { font-size: 0.9em; }
+      .deck-stack { width: 48px; height: 68px; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🐟 Go <span>Fish!</span></h1>
+  <div class="scoreboard">
+    <div>You: <span class="score" id="yourScore">0</span> books</div>
+    <div>Computer: <span class="score" id="compScore">0</span> books</div>
+  </div>
+
+  <div class="game-area">
+    <!-- Computer's hand -->
+    <div class="zone">
+      <div class="zone-label">Computer's Hand</div>
+      <div class="cards" id="compHand"></div>
+      <div class="zone-label" style="margin-top:6px;">Books</div>
+      <div class="books" id="compBooks"></div>
+    </div>
+
+    <!-- Deck + Message -->
+    <div class="zone deck-zone">
+      <div class="deck-stack" id="deckStack">
+        <div class="card card-back"></div>
+        <div class="card card-back"></div>
+        <div class="card card-back"></div>
+      </div>
+      <div class="deck-count">Deck: <span id="deckCount">38</span></div>
+    </div>
+
+    <div class="message-area">
+      <div class="msg" id="message">Dealing cards...</div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="action-area" id="actionArea">
+      <div class="rank-select" id="rankSelect"></div>
+      <button class="btn btn-ask" id="askBtn" disabled onclick="askForRank()">Ask for a rank</button>
+    </div>
+
+    <!-- Player's hand -->
+    <div class="zone">
+      <div class="zone-label">Your Hand</div>
+      <div class="cards player-cards" id="playerHand"></div>
+      <div class="zone-label" style="margin-top:6px;">Books</div>
+      <div class="books" id="playerBooks"></div>
+    </div>
+  </div>
+
+  <!-- Game Over Overlay -->
+  <div class="overlay" id="overlay">
+    <div class="overlay-box">
+      <h2 id="endTitle">Game Over</h2>
+      <div class="result" id="endResult"></div>
+      <button class="btn btn-new" onclick="startGame()">Play Again</button>
+    </div>
+  </div>
+
+<script>
+// ============================================================
+// GAME ENGINE
+// ============================================================
+
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+const SUITS = ['♠','♥','♦','♣'];
+const RANK_NAMES = {
+  '2':'2s','3':'3s','4':'4s','5':'5s','6':'6s','7':'7s','8':'8s',
+  '9':'9s','10':'10s','J':'Jacks','Q':'Queens','K':'Kings','A':'Aces'
+};
+
+let deck, playerHand, compHand, playerBooks, compBooks;
+let compMemory, selectedRank, isPlayerTurn, gameOver;
+
+function makeCard(rank, suit) {
+  return { rank, suit, id: rank + suit };
+}
+
+function makeDeck() {
+  const d = [];
+  for (const r of RANKS) for (const s of SUITS) d.push(makeCard(r, s));
+  // Shuffle
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+function draw() { return deck.length > 0 ? deck.pop() : null; }
+
+function getRanks(hand) {
+  return [...new Set(hand.map(c => c.rank))].sort((a,b) => RANKS.indexOf(a) - RANKS.indexOf(b));
+}
+
+function countRank(hand, rank) {
+  return hand.filter(c => c.rank === rank).length;
+}
+
+function removeRank(hand, rank) {
+  const taken = hand.filter(c => c.rank === rank);
+  const remaining = hand.filter(c => c.rank !== rank);
+  hand.length = 0;
+  hand.push(...remaining);
+  return taken;
+}
+
+function checkBooks(hand, books) {
+  const found = [];
+  const counts = {};
+  hand.forEach(c => { counts[c.rank] = (counts[c.rank] || 0) + 1; });
+  for (const [rank, count] of Object.entries(counts)) {
+    if (count === 4) {
+      removeRank(hand, rank);
+      books.push(rank);
+      found.push(rank);
+    }
+  }
+  return found;
+}
+
+function drawIfEmpty(hand) {
+  if (hand.length === 0 && deck.length > 0) {
+    hand.push(draw());
+    return true;
+  }
+  return false;
+}
+
+function isGameOver() {
+  if (playerBooks.length + compBooks.length >= 13) return true;
+  if (playerHand.length === 0 && compHand.length === 0 && deck.length === 0) return true;
+  return false;
+}
+
+// Computer AI
+function compChooseRank() {
+  const ranks = getRanks(compHand);
+  if (ranks.length === 0) return null;
+
+  // Priority 1: ranks with 3 cards
+  for (const r of ranks) {
+    if (countRank(compHand, r) === 3) return r;
+  }
+  // Priority 2: ranks player asked for
+  const known = ranks.filter(r => compMemory[r]);
+  if (known.length > 0) {
+    return known.reduce((a, b) => compMemory[a] > compMemory[b] ? a : b);
+  }
+  // Priority 3: ranks with 2
+  for (const r of ranks) {
+    if (countRank(compHand, r) === 2) return r;
+  }
+  // Fallback: random
+  return ranks[Math.floor(Math.random() * ranks.length)];
+}
+
+// ============================================================
+// UI RENDERING
+// ============================================================
+
+function renderCard(card, faceUp, delay = 0) {
+  const div = document.createElement('div');
+  div.style.animationDelay = `${delay}ms`;
+  if (faceUp) {
+    const isRed = card.suit === '♥' || card.suit === '♦';
+    div.className = `card card-front ${isRed ? 'red' : 'black'}`;
+    div.innerHTML = `<span class="rank">${card.rank}</span><span class="suit">${card.suit}</span>`;
+    div.dataset.rank = card.rank;
+  } else {
+    div.className = 'card card-back';
+  }
+  return div;
+}
+
+function render() {
+  // Computer hand (face down)
+  const ch = document.getElementById('compHand');
+  ch.innerHTML = '';
+  compHand.forEach((c, i) => ch.appendChild(renderCard(c, false, i * 30)));
+
+  // Player hand (face up, clickable)
+  const ph = document.getElementById('playerHand');
+  ph.innerHTML = '';
+  const sorted = [...playerHand].sort((a,b) =>
+    RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank) || SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit)
+  );
+  sorted.forEach((c, i) => {
+    const div = renderCard(c, true, i * 30);
+    if (isPlayerTurn && !gameOver) {
+      div.addEventListener('click', () => selectRank(c.rank));
+      if (c.rank === selectedRank) div.classList.add('selected');
+    }
+    ph.appendChild(div);
+  });
+
+  // Rank buttons
+  const rs = document.getElementById('rankSelect');
+  rs.innerHTML = '';
+  if (isPlayerTurn && !gameOver) {
+    const myRanks = getRanks(playerHand);
+    RANKS.forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'rank-btn' + (r === selectedRank ? ' active' : '');
+      btn.textContent = r;
+      btn.disabled = !myRanks.includes(r);
+      btn.addEventListener('click', () => selectRank(r));
+      rs.appendChild(btn);
+    });
+  }
+
+  // Ask button
+  const askBtn = document.getElementById('askBtn');
+  askBtn.disabled = !selectedRank || !isPlayerTurn || gameOver;
+  askBtn.textContent = selectedRank ? `Ask for ${RANK_NAMES[selectedRank]}` : 'Select a rank first';
+
+  // Books
+  document.getElementById('playerBooks').innerHTML =
+    playerBooks.map(r => `<div class="book">📚 ${RANK_NAMES[r]}</div>`).join('');
+  document.getElementById('compBooks').innerHTML =
+    compBooks.map(r => `<div class="book">📚 ${RANK_NAMES[r]}</div>`).join('');
+
+  // Scores
+  document.getElementById('yourScore').textContent = playerBooks.length;
+  document.getElementById('compScore').textContent = compBooks.length;
+
+  // Deck
+  document.getElementById('deckCount').textContent = deck.length;
+  const ds = document.getElementById('deckStack');
+  ds.style.opacity = deck.length > 0 ? '1' : '0.3';
+}
+
+function showMessage(text) {
+  const el = document.getElementById('message');
+  el.innerHTML = `<div class="msg">${text}</div>`;
+}
+
+function selectRank(rank) {
+  if (!isPlayerTurn || gameOver) return;
+  if (!getRanks(playerHand).includes(rank)) return;
+  selectedRank = rank;
+  render();
+}
+
+// ============================================================
+// GAME FLOW
+// ============================================================
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function startGame() {
+  document.getElementById('overlay').classList.remove('show');
+  deck = makeDeck();
+  playerHand = [];
+  compHand = [];
+  playerBooks = [];
+  compBooks = [];
+  compMemory = {};
+  selectedRank = null;
+  gameOver = false;
+
+  // Deal 7 each
+  for (let i = 0; i < 7; i++) {
+    playerHand.push(draw());
+    compHand.push(draw());
+  }
+
+  // Check initial books
+  checkBooks(playerHand, playerBooks);
+  checkBooks(compHand, compBooks);
+
+  // Random first player
+  isPlayerTurn = Math.random() < 0.5;
+  render();
+
+  if (isPlayerTurn) {
+    showMessage("Your turn! Pick a rank to ask for.");
+  } else {
+    showMessage("Computer goes first...");
+    setTimeout(() => computerTurn(), 1000);
+  }
+}
+
+async function askForRank() {
+  if (!selectedRank || !isPlayerTurn || gameOver) return;
+  const rank = selectedRank;
+  selectedRank = null;
+
+  // Remember what player asked for
+  compMemory[rank] = Date.now();
+
+  showMessage(`You: "Got any ${RANK_NAMES[rank]}?"`);
+  await sleep(800);
+
+  if (compHand.some(c => c.rank === rank)) {
+    const taken = removeRank(compHand, rank);
+    playerHand.push(...taken);
+    showMessage(`✅ Computer hands over ${taken.length} ${RANK_NAMES[rank]}!`);
+    const newBooks = checkBooks(playerHand, playerBooks);
+    if (newBooks.length > 0) {
+      await sleep(500);
+      showMessage(`📚 You completed a book of ${RANK_NAMES[newBooks[0]]}!`);
+    }
+    render();
+    await sleep(1000);
+
+    drawIfEmpty(playerHand);
+    if (checkEnd()) return;
+
+    if (playerHand.length > 0) {
+      showMessage("You got what you asked for — go again!");
+      isPlayerTurn = true;
+      render();
+      return;
+    }
+  } else {
+    showMessage(`🐟 Computer: "Go Fish!"`);
+    await sleep(800);
+    const drawn = draw();
+    if (drawn) {
+      playerHand.push(drawn);
+      showMessage(`You drew ${drawn.rank}${drawn.suit}`);
+      const newBooks = checkBooks(playerHand, playerBooks);
+      if (newBooks.length > 0) {
+        await sleep(500);
+        showMessage(`📚 You completed a book of ${RANK_NAMES[newBooks[0]]}!`);
+      }
+      render();
+      await sleep(800);
+
+      if (drawn.rank === rank && playerHand.length > 0 && !isGameOver()) {
+        showMessage("You drew what you asked for — go again!");
+        isPlayerTurn = true;
+        render();
+        return;
+      }
+    } else {
+      showMessage("Deck is empty — nothing to draw.");
+      render();
+      await sleep(800);
+    }
+  }
+
+  drawIfEmpty(playerHand);
+  if (checkEnd()) return;
+
+  // Computer's turn
+  isPlayerTurn = false;
+  render();
+  showMessage("Computer is thinking...");
+  await sleep(1200);
+  computerTurn();
+}
+
+async function computerTurn() {
+  drawIfEmpty(compHand);
+  if (checkEnd()) return;
+
+  if (compHand.length === 0) {
+    isPlayerTurn = true;
+    drawIfEmpty(playerHand);
+    render();
+    showMessage("Your turn! Pick a rank to ask for.");
+    return;
+  }
+
+  const rank = compChooseRank();
+  if (!rank) {
+    isPlayerTurn = true;
+    render();
+    showMessage("Your turn!");
+    return;
+  }
+
+  showMessage(`Computer: "Got any ${RANK_NAMES[rank]}?"`);
+  await sleep(1000);
+
+  if (playerHand.some(c => c.rank === rank)) {
+    const taken = removeRank(playerHand, rank);
+    compHand.push(...taken);
+    delete compMemory[rank];
+    showMessage(`😤 You hand over ${taken.length} ${RANK_NAMES[rank]}.`);
+    const newBooks = checkBooks(compHand, compBooks);
+    if (newBooks.length > 0) {
+      await sleep(500);
+      showMessage(`📚 Computer completed a book of ${RANK_NAMES[newBooks[0]]}!`);
+    }
+    render();
+    await sleep(1200);
+
+    drawIfEmpty(compHand);
+    if (checkEnd()) return;
+
+    if (compHand.length > 0) {
+      showMessage("Computer got what it asked for — goes again!");
+      await sleep(800);
+      computerTurn();
+      return;
+    }
+  } else {
+    showMessage(`🐟 You: "Go Fish!"`);
+    await sleep(800);
+    const drawn = draw();
+    if (drawn) {
+      const goAgain = drawn.rank === rank;
+      compHand.push(drawn);
+      showMessage("Computer draws a card.");
+      const newBooks = checkBooks(compHand, compBooks);
+      if (newBooks.length > 0) {
+        await sleep(500);
+        showMessage(`📚 Computer completed a book of ${RANK_NAMES[newBooks[0]]}!`);
+      }
+      render();
+      await sleep(1000);
+
+      if (goAgain && compHand.length > 0 && !isGameOver()) {
+        showMessage("Computer drew what it asked for — goes again!");
+        await sleep(800);
+        computerTurn();
+        return;
+      }
+    } else {
+      showMessage("Deck is empty — nothing to draw.");
+      render();
+      await sleep(800);
+    }
+  }
+
+  drawIfEmpty(compHand);
+  if (checkEnd()) return;
+
+  // Player's turn
+  isPlayerTurn = true;
+  drawIfEmpty(playerHand);
+  if (checkEnd()) return;
+
+  render();
+  showMessage("Your turn! Pick a rank to ask for.");
+}
+
+function checkEnd() {
+  if (isGameOver()) {
+    gameOver = true;
+    render();
+    const p = playerBooks.length;
+    const c = compBooks.length;
+    const title = document.getElementById('endTitle');
+    const result = document.getElementById('endResult');
+    if (p > c) {
+      title.textContent = '🎉 You Win!';
+      result.textContent = `${p} books to ${c}`;
+    } else if (c > p) {
+      title.textContent = '😞 Computer Wins';
+      result.textContent = `${c} books to ${p}`;
+    } else {
+      title.textContent = "🤝 It's a Tie!";
+      result.textContent = `${p} books each`;
+    }
+    setTimeout(() => {
+      document.getElementById('overlay').classList.add('show');
+    }, 1000);
+    return true;
+  }
+  return false;
+}
+
+// Start!
+startGame();
+</script>
+</body>
+</html>
